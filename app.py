@@ -3,6 +3,8 @@ import pandas as pd
 import os
 from datetime import datetime
 import json
+import glob
+
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Attendance Pro", layout="wide", initial_sidebar_state="expanded")
@@ -28,17 +30,30 @@ def save_config(config):
         json.dump(config, f)
 
 def load_student_data():
-    if not os.path.exists(STUDENT_DATA_FILE):
-        st.error(f"Error: {STUDENT_DATA_FILE} not found!")
-        return None
+    # Priority 1: Check for the exact master file
+    target_file = STUDENT_DATA_FILE
+    
+    # Priority 2: If master file is missing, find the most recent file matching the pattern
+    if not os.path.exists(target_file):
+        files = glob.glob("Student_Status_Report*.xlsx")
+        if files:
+            # Sort by modification time (most recent first)
+            files.sort(key=os.path.getmtime, reverse=True)
+            target_file = files[0]
+            st.info(f"💡 Found student data in: `{target_file}`")
+        else:
+            st.error(f"Error: No file matching `Student_Status_Report*.xlsx` found!")
+            return None
+            
     try:
-        df = pd.read_excel(STUDENT_DATA_FILE, sheet_name='Student Records')
+        df = pd.read_excel(target_file, sheet_name='Student Records')
         # Clean data: trim strings
         df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         return df
     except Exception as e:
-        st.error(f"Error loading student data: {e}")
+        st.error(f"Error loading student data from {target_file}: {e}")
         return None
+
 
 def save_attendance(records_df):
     try:
@@ -154,7 +169,36 @@ st.markdown("""
 
 st.markdown('<h1 class="main-title">📊 Attendance Management PRO</h1>', unsafe_allow_html=True)
 
-tabs = st.tabs(["📝 Mark Attendance", "⚙️ Settings", "📈 Reports"])
+tabs = st.tabs(["📝 Mark Attendance", "📥 Update Students", "⚙️ Settings", "📈 Reports"])
+
+# --- Tab 1: Update Students ---
+with tabs[1]:
+    st.subheader("📥 Update Student Records")
+    st.info("""
+        Upload a new student report (e.g., `Student_Status_Report_2_6_2026.xlsx`). 
+        **Note:** The system will automatically rename it to `Student_Status_Report.xlsx` to use it as the main record.
+    """)
+    
+    uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx"], key="student_upload")
+
+    
+    if uploaded_file is not None:
+        try:
+            # Check if the uploaded file has the required sheet
+            xl = pd.ExcelFile(uploaded_file)
+            if 'Student Records' in xl.sheet_names:
+                if st.button("🔥 Replace Current Records"):
+                    # Save the file
+                    with open(STUDENT_DATA_FILE, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    st.success("✅ Student records updated successfully!")
+                    st.balloons()
+                    # Optional: Rerun logic could go here but st.success is often enough
+            else:
+                st.error("❌ The uploaded file does not contain a sheet named **'Student Records'**. Please check the file and try again.")
+        except Exception as e:
+            st.error(f"❌ Error processing file: {e}")
+
 
 # --- Tab 1: Mark Attendance ---
 with tabs[0]:
@@ -262,7 +306,7 @@ with tabs[0]:
                     st.success(f"✅ Attendance for {len(new_records)} students recorded successfully!")
 
 # --- Tab 2: Settings ---
-with tabs[1]:
+with tabs[2]:
     st.subheader("⚙️ Course Schedule Configuration")
     st.info("Select the specific days of the week each course is held.")
     
@@ -292,7 +336,7 @@ with tabs[1]:
             st.balloons()
 
 # --- Tab 3: Reports ---
-with tabs[2]:
+with tabs[3]:
     st.subheader("📊 Attendance History & Analytics")
     if os.path.exists(ATTENDANCE_FILE):
         report_df = pd.read_excel(ATTENDANCE_FILE)
