@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TechFlex Admin - Advanced Attendance</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-100 p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden border border-slate-200">
+        <div class="bg-slate-900 p-6 text-white flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight">TechFlex <span class="text-blue-500">Institute</span></h1>
+                <p id="dateDisplay" class="text-slate-400 text-xs font-mono mt-1"></p>
+            </div>
+            <div class="flex gap-2">
+                <input type="file" id="uploadExcel" class="hidden" accept=".xlsx, .xls">
+                <button onclick="document.getElementById('uploadExcel').click()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-bold transition">Import Data</button>
+                <button onclick="downloadExcel()" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold transition">Export Excel</button>
+            </div>
+        </div>
+
+        <div class="p-6 bg-slate-50 border-b flex flex-wrap gap-4 items-end">
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Search Student</label>
+                <input type="text" id="searchInput" onkeyup="renderTable()" placeholder="Name or ID..." class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Course Name</label>
+                <select id="courseFilter" onchange="renderTable()" class="border rounded-lg p-2 text-sm bg-white min-w-[150px]">
+                    <option value="All">All Courses</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Account Status</label>
+                <select id="statusFilter" onchange="renderTable()" class="border rounded-lg p-2 text-sm bg-white font-semibold">
+                    <option value="ACTIVE" class="text-green-600">ACTIVE ONLY</option>
+                    <option value="INACTIVE" class="text-red-600">INACTIVE ONLY</option>
+                    <option value="All">SHOW ALL</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="p-4 overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="text-slate-400 text-[11px] uppercase font-bold border-b">
+                    <tr>
+                        <th class="p-3">Student Details</th>
+                        <th class="p-3 text-center">Status</th>
+                        <th class="p-3">Course</th>
+                        <th class="p-3 text-center">Mark Attendance</th>
+                    </tr>
+                </thead>
+                <tbody id="studentList" class="divide-y divide-slate-100">
+                    <tr><td colspan="4" class="p-20 text-center text-slate-400 italic">Please import your student record excel file.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+        const todayDate = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
+        document.getElementById('dateDisplay').innerText = "System Date: " + new Date().toDateString();
+
+        // 1. File Import
+        document.getElementById('uploadExcel').addEventListener('change', function(e) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const workbook = XLSX.read(new Uint8Array(event.target.result), {type: 'array'});
+                allData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                
+                // Dropdown update
+                const courses = [...new Set(allData.map(s => s['Course Name']).filter(c => c))];
+                const cSelect = document.getElementById('courseFilter');
+                cSelect.innerHTML = '<option value="All">All Courses</option>';
+                courses.forEach(c => cSelect.innerHTML += `<option value="${c}">${c}</option>`);
+                
+                renderTable();
+            };
+            reader.readAsArrayBuffer(e.target.files[0]);
+        });
+
+        // 2. Main Logic with Filters
+        function renderTable() {
+            const tbody = document.getElementById('studentList');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const course = document.getElementById('courseFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            
+            tbody.innerHTML = '';
+
+            const filtered = allData.filter(s => {
+                const matchSearch = s.Name?.toLowerCase().includes(search) || s['Student ID']?.toString().includes(search);
+                const matchCourse = course === "All" || s['Course Name'] === course;
+                const matchStatus = status === "All" || s['Account Status'] === status;
+                return matchSearch && matchCourse && matchStatus;
+            });
+
+            if(filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="p-10 text-center text-slate-400">No matching records found.</td></tr>';
+                return;
+            }
+
+            filtered.forEach(s => {
+                const mainIdx = allData.findIndex(item => item['Student ID'] === s['Student ID']);
+                const curMark = allData[mainIdx][todayDate] || '';
+                const isInactive = s['Account Status'] === 'INACTIVE';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3">
+                            <div class="font-bold text-slate-800 ${isInactive ? 'opacity-50' : ''}">${s.Name}</div>
+                            <div class="text-[10px] text-slate-400">${s['Student ID']}</div>
+                        </td>
+                        <td class="p-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s['Account Status'] === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                                ${s['Account Status']}
+                            </span>
+                        </td>
+                        <td class="p-3 text-xs text-slate-600">${s['Course Name']}</td>
+                        <td class="p-3 text-center">
+                            <div class="flex justify-center gap-2">
+                                <button onclick="markStatus(${mainIdx}, 'P', this)" class="w-8 h-8 rounded border-2 border-green-200 text-green-600 font-bold hover:bg-green-600 hover:text-white transition ${curMark === 'P' ? 'bg-green-600 text-white' : ''}">P</button>
+                                <button onclick="markStatus(${mainIdx}, 'A', this)" class="w-8 h-8 rounded border-2 border-red-200 text-red-600 font-bold hover:bg-red-600 hover:text-white transition ${curMark === 'A' ? 'bg-red-600 text-white' : ''}">A</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function markStatus(idx, val, btn) {
+            allData[idx][todayDate] = val;
+            const parent = btn.parentElement;
+            parent.querySelectorAll('button').forEach(b => b.classList.remove('bg-green-600', 'bg-red-600', 'text-white'));
+            btn.classList.add(val === 'P' ? 'bg-green-600' : 'bg-red-600', 'text-white');
+        }
+
+        function downloadExcel() {
+            if(!allData.length) return alert("Pehle file upload karen!");
+            const ws = XLSX.utils.json_to_sheet(allData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Attendance_Report");
+            XLSX.writeFile(wb, `TechFlex_Attendance_${todayDate}.xlsx`);
+        }
+    </script>
+</body>
+</html>
